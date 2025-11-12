@@ -10,6 +10,7 @@ Refer to [1.install-kubeadm.md](../1.install-kubeadm.md)
 ### 1. Apply Labels to a Pod
 ```bash
 kubectl run nginx --image=nginx --labels="env=staging,tier=frontend"
+kubectl run nginx-prod --image=nginx --labels="env=prod,tier=frontend"
 kubectl get pods --show-labels
 ```
 - Sample output
@@ -24,8 +25,8 @@ kubectl get pods -l env=staging
 ```
 - Sample output
 ```bash
-NAME    READY   STATUS
-nginx   1/1     Running
+NAME    READY   STATUS    RESTARTS   AGE
+nginx   1/1     Running   0          2m6s
 ```
 
 ### 3. Use Label Selector (Set-based)
@@ -34,8 +35,9 @@ kubectl get pods -l 'tier in (frontend,backend)'
 ```
 - Sample output
 ```bash
-NAME    READY   STATUS
-nginx   1/1     Running
+NAME         READY   STATUS    RESTARTS   AGE
+nginx        1/1     Running   0          2m12s
+nginx-prod   1/1     Running   0          17s
 ```
 
 ---
