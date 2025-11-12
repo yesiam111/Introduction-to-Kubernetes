@@ -1,4 +1,4 @@
-# Topic 1 - Kubernetes Basic Management Tasks
+# Topic 2 - Kubernetes Basic Management Tasks
 
 ## I. Context Management
 ### 1. View and switch between Kubernetes contexts
