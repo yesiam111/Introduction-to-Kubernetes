@@ -17,73 +17,43 @@ CURRENT   NAME             CLUSTER          AUTHINFO           NAMESPACE
 ## II. Namespace Operations
 ### 1. Manage resources within specific namespaces
 ```
-kubectl -n <namespace> get pods
-kubectl -n <namespace> describe pod <pod-name>
-kubectl -n <namespace> delete pod <pod-name>
-kubectl -n <namespace> apply -f deployment.yaml
+kubectl -n demo-ns get pods
+kubectl -n demo-ns describe pod <pod-name>
+kubectl -n demo-ns delete pod <pod-name>
+kubectl -n demo-ns apply -f deployment.yaml
 ```
 - Sample output
 ```
-NAME            READY   STATUS    RESTARTS   AGE
-web-5c8d6d7b7c  1/1     Running   0          3m
+NAME                                READY   STATUS    RESTARTS   AGE
+nginx-deployment-647677fc66-hsbks   1/1     Running   0          14s
 ```
 
 ## III. Pod Interaction
 ### 1. Execute commands, view logs, copy files, and port-forward
+- Demo with any container
 ```
 kubectl exec -it <pod-name> -- bash
 kubectl logs <pod-name>
 kubectl cp <pod-name>:/app/config.yaml ./config.yaml
 kubectl port-forward <pod-name> 8080:80
 ```
-- Sample output
-```
-root@pod:/# ls /app
-config.yaml  main.py
-```
 
-## IV. Management Tools
-### 1. Use additional management utilities
-```
-# CLI-based
-k9s
-kubectl get pods -A
-
-# GUI-based
-# Lens or Rancher UI
-```
-- Sample output
-```
-Context: dev-cluster
-Namespace: default
-Pods: 4 running
-```
-
-## V. High Availability (HA)
-### 1. Understand HA deployment models
-```
-# Control Plane and etcd on same node
-# Control Plane and etcd on separate nodes
-```
-- Sample output
-```
-ClusterStatus:
-  controlPlaneNodes: 3
-  etcdNodes: 3
-  status: Healthy
-```
 
 ## VI. Node Maintenance - Drain and Uncordon
 ### 1. Safely remove a node from scheduling and restore it later
 ```
 kubectl drain <node-name> --ignore-daemonsets --delete-emptydir-data
-kubectl uncordon <node-name>
 ```
 - Sample output
 ```
-node/ip-172-31-20-150 cordoned
-evicting pod "web-5d6bdfc8c5-9vjgk"
-node/ip-172-31-20-150 uncordoned
+Warning: ignoring DaemonSet-managed Pods: kube-system/calico-node-fj222, kube-system/kube-proxy-2n6cc
+evicting pod demo-ns/nginx-deployment-647677fc66-hsbks
+pod/nginx-deployment-647677fc66-hsbks evicted
+node/k8s-02 drained
+```
+### 2. Allow node to take workload
+```
+kubectl uncordon <node-name>
 ```
 
 ## VII. Add and Remove Nodes
@@ -95,14 +65,14 @@ openssl x509 -pubkey -in /etc/kubernetes/pki/ca.crt | \
 openssl rsa -pubin -outform der 2>/dev/null | \
 openssl dgst -sha256 -hex | sed 's/^.* //'
 
+# Or
+kubeadm token create --print-join-commandd
+
+###
+
 # On the new node
 kubeadm join <control-plane-host>:6443 --token <token> \
---discovery-token-ca-cert-hash sha256:<hash>
-```
-- Sample output
-```
-This node has joined the cluster
-Successfully established connection to control-plane
+--discovery-token-ca-cert-hash sha256:<hash> 
 ```
 
 ### 2. Remove a node from the cluster
@@ -110,16 +80,19 @@ Successfully established connection to control-plane
 kubectl drain <node-name> --ignore-daemonsets --delete-emptydir-data
 kubectl delete node <node-name>
 ```
-- Sample output
-```
-node/ip-172-31-25-220 drained
-node "ip-172-31-25-220" deleted
-```
 
 ## VIII. Backup and Restore etcd
-### 1. Backup etcd using snapshot
+### 1. Create pod
 ```
-ETCDCTL_API=3 etcdctl --endpoints <ENDPOINT> snapshot save /backup/etcd-snapshot.db
+kubectl run nginx --image=nginx --labels="env=staging,tier=frontend"
+kubectl run nginx-prod --image=nginx --labels="env=prod,tier=frontend"
+kubectl get pods --show-labels
+```
+
+### 2. Backup etcd using snapshot
+```
+mkdir /backup
+ETCDCTL_API=3 etcdctl --endpoints https://<etcd ip>:2379 --cert /etc/kubernetes/pki/etcd/peer.crt --key /etc/kubernetes/pki/etcd/peer.key --cacert /etc/kubernetes/pki/etcd/ca.crt snapshot save /backup/etcd-snapshot.db
 ETCDCTL_API=3 etcdctl --write-out=table snapshot status /backup/etcd-snapshot.db
 ```
 - Sample output
@@ -131,16 +104,31 @@ ETCDCTL_API=3 etcdctl --write-out=table snapshot status /backup/etcd-snapshot.db
 +----------+----------+------------+------------+
 ```
 
-### 2. Restore etcd from snapshot
+- If etcd client not found: `apt install etcd-client -y`
+
+### 2. Delete pod
 ```
-systemctl stop kube-apiserver kube-controller-manager kube-scheduler etcd
+kubectl delete pod nginx nginx-prod
+kubectl get pod
+## nginx and ngix-prod are deleted
+```
+
+### 3. Restore etcd from snapshot
+```
+systemctl stop kubelet docker
 ETCDCTL_API=3 etcdctl snapshot restore /backup/etcd-snapshot.db \
   --data-dir /var/lib/etcd-restored
 mv /var/lib/etcd /var/lib/etcd-old && mv /var/lib/etcd-restored /var/lib/etcd
-systemctl start etcd kube-apiserver kube-controller-manager kube-scheduler
+systemctl start kubelet docker
 ```
-- Sample output
+
+### 4. Get pod list
 ```
-Snapshot restored successfully
-Cluster bootstrapped with revision 2384
+kubectl get pod
+## should see nginx and nginx-prod pod if etcd restored correctly
+```
+
+### 5. Cleanup
+```
+kubectl delete pod nginx nginx-prod --force
 ```
