@@ -3,22 +3,10 @@
 ## I. Understanding Kubernetes Objects
 ### 1. Inspect Kubernetes object structure
 ```bash
+kubectl run nginx --image=nginx
 kubectl get pod nginx -o yaml
 ```
-- Sample output
-```yaml
-apiVersion: v1
-kind: Pod
-metadata:
-  name: nginx
-  namespace: default
-spec:
-  containers:
-  - name: nginx
-    image: nginx:latest
-status:
-  phase: Running
-```
+- Explain key section in kubernetes object
 
 ## II. Working with Kubernetes RBAC
 ### 1. Create a Role for specific resource access
@@ -88,7 +76,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: read-secrets
-  namespace: development
+  namespace: demo-ns
 subjects:
 - kind: User
   name: dave
@@ -126,7 +114,55 @@ EOF
 clusterrolebinding.rbac.authorization.k8s.io/read-secrets-global created
 ```
 
-## III. Service Account Creation and Binding
+---
+
+## III. Testing and Demonstrating Authorization
+
+### 1. Check permissions of a specific user
+```bash
+kubectl auth can-i list pods --as=jane --namespace=default
+kubectl auth can-i delete pods --as=jane --namespace=default
+```
+- Sample output
+```bash
+yes
+no
+```
+
+### 2. Verify ClusterRole scope for another user
+```bash
+kubectl auth can-i get secrets --as=dave --namespace=demo-ns
+kubectl auth can-i get secrets --as=dave --namespace=default
+```
+- Sample output
+```bash
+yes
+no
+```
+
+### 3. Test global access for a user group
+```bash
+kubectl auth can-i get secrets --as=testuser --as-group=manager --namespace=default
+kubectl auth can-i get secrets --as=testuser --as-group=manager --namespace=dev
+```
+- Sample output
+```bash
+yes
+yes
+```
+
+### 4. Try unauthorized action
+```bash
+kubectl auth can-i delete secrets --as=jane --namespace=default
+```
+- Sample output
+```bash
+no
+```
+
+---
+
+## IV. Service Account Creation and Binding
 ### 1. Create a ServiceAccount
 ```bash
 cat <<EOF | kubectl apply -f -
@@ -145,8 +181,8 @@ serviceaccount/build-robot created
 ```bash
 kubectl create rolebinding my-sa-view \
   --clusterrole=view \
-  --serviceaccount=my-namespace:build-robot \
-  --namespace=my-namespace
+  --serviceaccount=demo-ns:build-robot \
+  --namespace=demo-ns
 ```
 - Sample output
 ```bash
@@ -180,5 +216,56 @@ EOF
 ```
 - Sample output
 ```bash
+deployment.apps/nginx-deployment created
+```
+
+### 4. Verify service account token usage
+```bash
+kubectl describe $(kubectl get pod -l app=nginx -o name)
+```
+- Sample output
+```yaml
+Name:             nginx-deployment-58c877d9fd-vgc4q
+Namespace:        default
+Priority:         0
+Service Account:  build-robot
+Node:             k8s-02/192.168.100.61
+```
+
+---
+
+## V. ServiceAccount Authorization Test
+### 1. Check permissions of ServiceAccount
+```bash
+kubectl auth can-i list pods --as=system:serviceaccount:demo-ns:build-robot --namespace=demo-ns
+kubectl auth can-i get secrets --as=system:serviceaccount:demo-ns:build-robot --namespace=demo-ns
+```
+- Sample output
+```bash
+yes
+no
+```
+
+### 2. Cleanup environment
+```bash
+kubectl delete role pod-reader -n default
+kubectl delete clusterrole secret-reader
+kubectl delete rolebinding read-pods -n default
+kubectl delete rolebinding read-secrets -n demo-ns
+kubectl delete clusterrolebinding read-secrets-global
+kubectl delete serviceaccount build-robot
+kubectl delete deployment nginx-deployment
+```
+- Sample output
+```bash
+role.rbac.authorization.k8s.io "pod-reader" deleted
+clusterrole.rbac.authorization.k8s.io "secret-reader" deleted
+rolebinding.rbac.authorization.k8s.io "read-pods" deleted
+rolebinding.rbac.authorization.k8s.io "read-secrets" deleted
+clusterrolebinding.rbac.authorization.k8s.io "read-secrets-global" deleted
+serviceaccount "build-robot" deleted
+deployment.apps "nginx-deployment" deleted
+```
+
 deployment.apps/nginx-deployment created
 ```
