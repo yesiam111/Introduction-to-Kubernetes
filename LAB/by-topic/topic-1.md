@@ -40,6 +40,10 @@ nginx        1/1     Running   0          2m12s
 nginx-prod   1/1     Running   0          17s
 ```
 
+### 4. Cleanup
+```bash
+kubectl delete pod nginx nginx-prod
+```
 ---
 
 ## III. Namespace
