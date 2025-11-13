@@ -94,6 +94,7 @@ nginx-deployment-6f9c9d8f8d-d3e4f   1/1     Running   0          20s
 ```
 
 ### 2. Configure Horizontal Pod Autoscaler
+ * Refer to [6.config-hpa.md](../6.config-hpa.md) to config HPA first
 ```bash
 kubectl autoscale deployment nginx-deployment --min=2 --max=10 --cpu-percent=80
 kubectl get hpa
