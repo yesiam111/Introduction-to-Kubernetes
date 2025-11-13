@@ -1,14 +1,44 @@
 # Topic 4 - Kubernetes Pod and Container
 
 ## I. ConfigMap and Secret
-### 1. Create and use ConfigMap in Pod
+### 1. Prepare configuration files
 ```bash
-# Create a ConfigMap from literal values
+# Create a folder for config files
+mkdir -p ./configmap-files
+
+# Create a user-interface.properties file
+cat <<EOF > ./configmap-files/user-interface.properties
+color.good=purple
+color.bad=yellow
+allow.textmode=true
+EOF
+
+# Create another configuration file
+cat <<EOF > ./configmap-files/game.properties
+enemy.types=aliens,monsters
+player.maximum-lives=5
+EOF
+
+# Verify the files
+ls ./configmap-files
+cat ./configmap-files/user-interface.properties
+```
+- Sample output
+```bash
+game.properties  user-interface.properties
+color.good=purple
+color.bad=yellow
+allow.textmode=true
+```
+
+### 2. Create ConfigMap from files and literals
+```bash
 kubectl create configmap game-demo \
   --from-literal=player_initial_lives=3 \
-  --from-literal=ui_properties_file_name=user-interface.properties
+  --from-file=./configmap-files/game.properties \
+  --from-file=./configmap-files/user-interface.properties
 
-# Verify ConfigMap content
+# Inspect ConfigMap
 kubectl get configmap game-demo -o yaml
 ```
 - Sample output
@@ -16,13 +46,19 @@ kubectl get configmap game-demo -o yaml
 apiVersion: v1
 data:
   player_initial_lives: "3"
-  ui_properties_file_name: user-interface.properties
+  game.properties: |
+    enemy.types=aliens,monsters
+    player.maximum-lives=5
+  user-interface.properties: |
+    color.good=purple
+    color.bad=yellow
+    allow.textmode=true
 kind: ConfigMap
 metadata:
   name: game-demo
 ```
 
-### 2. Mount ConfigMap into Pod as env and volume
+### 3. Inject ConfigMap into Pod
 ```bash
 cat <<EOF | kubectl apply -f -
 apiVersion: v1
@@ -49,44 +85,69 @@ spec:
     configMap:
       name: game-demo
 EOF
+
+kubectl wait --for=condition=Ready pod/configmap-demo-pod
+kubectl exec -it configmap-demo-pod -- sh
 ```
 - Sample output
 ```bash
 pod/configmap-demo-pod created
+pod/configmap-demo-pod condition met
+/ # echo $PLAYER_INITIAL_LIVES
+3
+/ # ls /config
+game.properties  user-interface.properties
+/ # cat /config/user-interface.properties
+color.good=purple
+color.bad=yellow
+allow.textmode=true
 ```
 
-### 3. Create and use Secret in Pod
+---
+
+### 4. Create and use Secret
 ```bash
 kubectl create secret generic test-secret \
-  --from-literal=username=my-app \
-  --from-literal=password=39528$vdg7Jb
+  --from-literal=username=myapp \
+  --from-literal=password=secretpass
 
-# Verify Secret
 kubectl get secret test-secret -o yaml
 ```
 - Sample output
 ```yaml
 apiVersion: v1
 data:
-  password: Mzk1MjgkdmRnN0pi
-  username: bXktYXBw
+  password: c2VjcmV0cGFzcw==
+  username: bXlhcHA=
 kind: Secret
 metadata:
   name: test-secret
 type: Opaque
 ```
 
-### 4. Mount Secret as volume
+### 5. Inject Secret into Pod
 ```bash
 cat <<EOF | kubectl apply -f -
 apiVersion: v1
 kind: Pod
 metadata:
-  name: secret-test-pod
+  name: secret-demo-pod
 spec:
   containers:
-  - name: test-container
-    image: nginx
+  - name: demo
+    image: alpine
+    command: ["sleep", "3600"]
+    env:
+    - name: USERNAME
+      valueFrom:
+        secretKeyRef:
+          name: test-secret
+          key: username
+    - name: PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: test-secret
+          key: password
     volumeMounts:
     - name: secret-volume
       mountPath: /etc/secret-volume
@@ -96,26 +157,37 @@ spec:
     secret:
       secretName: test-secret
 EOF
+
+kubectl wait --for=condition=Ready pod/secret-demo-pod
+kubectl exec -it secret-demo-pod -- sh
 ```
 - Sample output
 ```bash
-pod/secret-test-pod created
+/ # echo $USERNAME
+myapp
+/ # echo $PASSWORD
+secretpass
+/ # ls /etc/secret-volume
+password  username
+/ # cat /etc/secret-volume/username
+myapp
 ```
 
 ---
 
 ## II. Resource Requests and Limits
-### 1. Define CPU and Memory limits for Pod
+### 1. Define CPU and Memory limits
 ```bash
 cat <<EOF | kubectl apply -f -
 apiVersion: v1
 kind: Pod
 metadata:
-  name: frontend
+  name: resource-demo
 spec:
   containers:
   - name: app
-    image: nginx
+    image: busybox
+    command: ["sh", "-c", "while true; do echo running; sleep 5; done"]
     resources:
       requests:
         memory: "64Mi"
@@ -124,30 +196,23 @@ spec:
         memory: "128Mi"
         cpu: "500m"
 EOF
-```
-- Sample output
-```bash
-pod/frontend created
-```
 
-### 2. Observe pod scheduling based on resource request
-```bash
-kubectl describe pod frontend
+kubectl describe pod resource-demo
 ```
 - Sample output
 ```bash
-Status: Running
 Requests:
   cpu: 250m
   memory: 64Mi
 Limits:
   cpu: 500m
   memory: 128Mi
+Status: Running
 ```
 
 ---
 
-## III. Container Probes and Restart Policy
+## III. Container Probes
 ### 1. Liveness probe using exec
 ```bash
 cat <<EOF | kubectl apply -f -
@@ -171,41 +236,20 @@ spec:
       initialDelaySeconds: 5
       periodSeconds: 5
 EOF
-```
-- Sample output
-```bash
-pod/liveness-exec created
-```
 
-### 2. Liveness probe using HTTP
-```bash
-cat <<EOF | kubectl apply -f -
-apiVersion: v1
-kind: Pod
-metadata:
-  name: liveness-http
-spec:
-  containers:
-  - name: liveness
-    image: registry.k8s.io/liveness
-    args: ["/server"]
-    livenessProbe:
-      httpGet:
-        path: /healthz
-        port: 8080
-      initialDelaySeconds: 3
-      periodSeconds: 3
-EOF
+kubectl get pod liveness-exec -w
 ```
 - Sample output
 ```bash
-pod/liveness-http created
+NAME             READY   STATUS    RESTARTS   AGE
+liveness-exec    1/1     Running   0          10s
+liveness-exec    1/1     Running   1          40s   # restarted after probe failed
 ```
 
 ---
 
 ## IV. Multi-Container Pod
-### 1. Create Pod with sidecar container
+### 1. Pod with sidecar container
 ```bash
 cat <<EOF | kubectl apply -f -
 apiVersion: v1
@@ -214,14 +258,14 @@ metadata:
   name: multi-container-pod
 spec:
   containers:
-  - name: web
-    image: alpine
-    command: ['sh', '-c', 'echo "logging" > /opt/logs.txt; sleep 3600']
+  - name: writer
+    image: busybox
+    command: ['sh', '-c', 'while true; do echo $(date) >> /opt/logs.txt; sleep 2; done']
     volumeMounts:
       - name: data
         mountPath: /opt
-  - name: logshipper
-    image: alpine
+  - name: reader
+    image: busybox
     command: ['sh', '-c', 'tail -f /opt/logs.txt']
     volumeMounts:
       - name: data
@@ -230,58 +274,91 @@ spec:
     - name: data
       emptyDir: {}
 EOF
+
+kubectl exec -it multi-container-pod -c reader -- sh
 ```
 - Sample output
 ```bash
-pod/multi-container-pod created
+/ # tail -f /opt/logs.txt
+Wed Nov 12 14:01:32 UTC 2025
+Wed Nov 12 14:01:34 UTC 2025
+Wed Nov 12 14:01:36 UTC 2025
 ```
 
 ---
 
 ## V. Init Container
-### 1. Create Pod with Init Containers
+### 1. Pod with Init Containers
 ```bash
 cat <<EOF | kubectl apply -f -
 apiVersion: v1
 kind: Pod
 metadata:
-  name: myapp-pod
+  name: init-demo-pod
 spec:
   initContainers:
-  - name: init-myservice
+  - name: init-wait
     image: busybox
-    command: ['sh', '-c', "until nslookup myservice.default.svc.cluster.local; do echo waiting for myservice; sleep 2; done"]
-  - name: init-mydb
-    image: busybox
-    command: ['sh', '-c', "until nslookup mydb.default.svc.cluster.local; do echo waiting for mydb; sleep 2; done"]
+    command: ['sh', '-c', 'echo Init container running; sleep 5']
   containers:
-  - name: myapp
+  - name: app
     image: busybox
-    command: ['sh', '-c', 'echo The app is running! && sleep 3600']
+    command: ['sh', '-c', 'echo App started; sleep 3600']
 EOF
+
+kubectl get pod init-demo-pod -w
+
 ```
 - Sample output
 ```bash
-pod/myapp-pod created
+NAME            READY   STATUS     RESTARTS   AGE
+init-demo-pod   0/1     Init:0/1   0          2s
+init-demo-pod   0/1     Init:Completed   0    7s
+init-demo-pod   1/1     Running         0    10s
 ```
 
 ---
 
 ## VI. Practice Summary
-### 1. Combined practice task
+### 1. Combined verification
 ```bash
-# Create ConfigMap and Secret
-kubectl create configmap demo-config --from-literal=app_mode=production
-kubectl create secret generic demo-secret --from-literal=db_user=admin --from-literal=db_pass=12345
-
-# Apply Pod with resource limit and probe
-kubectl apply -f frontend.yaml
-kubectl apply -f liveness-exec.yaml
+kubectl get pod,configmap,secret
+kubectl exec -it configmap-demo-pod -- sh -c "env | grep PLAYER"
+kubectl exec -it secret-demo-pod -- sh -c "ls /etc/secret-volume"
 ```
 - Sample output
 ```bash
-configmap/demo-config created
-secret/demo-secret created
-pod/frontend created
-pod/liveness-exec created
+NAME                  READY   STATUS    RESTARTS   AGE
+configmap-demo-pod    1/1     Running   0          3m
+secret-demo-pod       1/1     Running   0          2m
+resource-demo         1/1     Running   0          2m
+multi-container-pod   2/2     Running   0          2m
+init-demo-pod         1/1     Running   0          1m
+NAME            DATA   AGE
+configmap/game-demo   3      3m
+NAME            TYPE     DATA   AGE
+secret/test-secret   Opaque   2      3m
+```
+
+---
+
+## VII. Cleanup
+### 1. Delete all created resources
+```bash
+kubectl delete pod configmap-demo-pod secret-demo-pod resource-demo \
+  liveness-exec multi-container-pod init-demo-pod
+kubectl delete configmap game-demo
+kubectl delete secret test-secret
+rm -rf ./configmap-files
+```
+- Sample output
+```bash
+pod "configmap-demo-pod" deleted
+pod "secret-demo-pod" deleted
+pod "resource-demo" deleted
+pod "liveness-exec" deleted
+pod "multi-container-pod" deleted
+pod "init-demo-pod" deleted
+configmap "game-demo" deleted
+secret "test-secret" deleted
 ```
