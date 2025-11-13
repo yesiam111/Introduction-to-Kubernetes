@@ -1,5 +1,32 @@
 # Topic 5 - Kubernetes Workloads and Scheduling
 
+## Before the lab
+### 1. Install helm
+```
+curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-4 | bash
+## DO NOT DO THIS ON PRODUCTION ENV
+## ALWAYS CHECK THE SCRIPT CONTENT BEFORE EXECUTION
+```
+### 2. Install local disk provisioning
+```
+helm repo add openebs https://openebs.github.io/openebs
+helm repo update
+helm install openebs --namespace openebs openebs/openebs --set engines.replicated.mayastor.enabled=false --create-namespace
+kubectl patch storageclass openebs-hostpath -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'
+
+```
+
+### 3. Verify storage class
+```
+kubectl get sc
+```
+- Sample output:
+```
+NAME                         PROVISIONER        RECLAIMPOLICY   VOLUMEBINDINGMODE      ALLOWVOLUMEEXPANSION   AGE
+openebs-hostpath (default)   openebs.io/local   Delete          WaitForFirstConsumer   false                  23m
+openebs-loki-localpv         openebs.io/local   Delete          WaitForFirstConsumer   false                  23m
+openebs-minio-localpv        openebs.io/local   Delete          WaitForFirstConsumer   false                  23m
+```
 ## I. Deployment
 ### 1. Create a simple Nginx Deployment
 ```bash
@@ -30,15 +57,15 @@ NAME   READY   AGE
 web    3/3     1m
 
 NAME    STATUS   VOLUME                                     CAPACITY   ACCESS MODES   STORAGECLASS   AGE
-web-0   Bound    pvc-12345a67-bc89-4e0d-b2ab-0cde12345fgh   1Gi        RWO            standard       1m
+www-web-0   Bound    pvc-12345a67-bc89-4e0d-b2ab-0cde12345fgh   1Gi        RWO       openebs-hostpath       1m
 ```
 
 ## III. DaemonSet
 ### 1. Run a Pod on all nodes using DaemonSet
 ```bash
 kubectl apply -f https://k8s.io/examples/controllers/daemonset.yaml
-kubectl get daemonsets
-kubectl get pods -o wide
+kubectl -n kube-system get daemonsets | grep -E "fluentd|NAME"
+kubectl -n kube-system get pods -o wide | grep -E "fluentd|NAME"
 ```
 - Sample output
 ```bash
