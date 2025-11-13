@@ -95,6 +95,36 @@ nginx-deployment-6f9c9d8f8d-d3e4f   1/1     Running   0          20s
 
 ### 2. Configure Horizontal Pod Autoscaler
  * Refer to [6.config-hpa.md](../6.config-hpa.md) to config HPA first
+ * Add resource request and limit to deployment. HPA won't activate without resource request
+```bash
+kubectl apply -f - <<EOF
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-deployment
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: nginx
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:latest
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+          limits:
+            cpu: "500m"
+            memory: "256Mi"
+EOF
+```
+
 ```bash
 kubectl autoscale deployment nginx-deployment --min=2 --max=10 --cpu-percent=80
 kubectl get hpa
@@ -147,11 +177,58 @@ spec:
 EOF
 
 kubectl get pdb
+kubectl describe pdb nginx-pdb
 ```
 - Sample output
 ```bash
 NAME        MIN AVAILABLE   MAX UNAVAILABLE   ALLOWED DISRUPTIONS   AGE
 nginx-pdb   2               N/A               1                     30s
+
+Name:         nginx-pdb
+Namespace:    default
+Min available: 2
+Selector:     app=nginx-deployment
+Allowed disruptions: 1
+Current:      3
+Desired:      2
+```
+
+### 2. Simulate disruption (drain node)
+```bash
+kubectl get nodes
+kubectl drain <node-name> --ignore-daemonsets --delete-emptydir-data
+kubectl get pods -l app=nginx-deployment
+kubectl describe pdb nginx-pdb
+```
+- Sample output
+```bash
+node/<node-name> cordoned
+evicting pod "nginx-deployment-7cdbd8f8b5-abc12"
+cannot evict pod as it would violate the pod's disruption budget.
+
+Name:         nginx-pdb
+Min available: 2
+Allowed disruptions: 0
+Disruptions allowed: 0
+Current healthy: 2
+```
+
+### 3. Restore normal state
+```bash
+kubectl uncordon <node-name>
+kubectl get pods -l app=nginx-deployment
+kubectl describe pdb nginx-pdb
+```
+- Sample output
+```bash
+node/<node-name> uncordoned
+NAME                                READY   STATUS    RESTARTS   AGE
+nginx-deployment-7cdbd8f8b5-abc12   1/1     Running   0          5m
+nginx-deployment-7cdbd8f8b5-def34   1/1     Running   0          5m
+nginx-deployment-7cdbd8f8b5-ghi56   1/1     Running   0          5m
+
+Allowed disruptions: 1
+Current healthy: 3
 ```
 
 ## VII. Cleanup
@@ -159,8 +236,9 @@ nginx-pdb   2               N/A               1                     30s
 ```bash
 kubectl delete deployment nginx-deployment
 kubectl delete statefulset web
-kubectl delete daemonset fluentd-elasticsearch
+kubectl -n kube-system delete daemonset fluentd-elasticsearch
 kubectl delete pdb nginx-pdb
+ kubectl delete hpa nginx-deployment
 ```
 - Sample output
 ```bash
@@ -168,4 +246,5 @@ deployment.apps "nginx-deployment" deleted
 statefulset.apps "web" deleted
 daemonset.apps "fluentd-elasticsearch" deleted
 poddisruptionbudget.policy "nginx-pdb" deleted
+horizontalpodautoscaler.autoscaling "nginx-deployment" deleted
 ```
