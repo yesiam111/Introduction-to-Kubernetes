@@ -7,3 +7,4 @@
 - [Container from Scratch. This is my first blog and I want to… | by Prabhu Jayakumar | ITNEXT](https://itnext.io/container-from-scratch-348838574160)
 - [Docker Containers vs. VMs: A Look at the Pros and Cons](https://www.backblaze.com/blog/vm-vs-containers/)
 - [The differences between Docker, containerd, CRI-O and runc | by Vineet Kumar](https://vineetcic.medium.com/the-differences-between-docker-containerd-cri-o-and-runc-a93ae4c9fdac)
+- [ETCD simply explained](https://www.wallarm.com/cloud-native-products-101/what-is-etcd)
