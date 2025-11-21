@@ -1,4 +1,4 @@
-# Topic 1 - Kubernetes Storage
+# Topic 8 - Kubernetes Storage
 
 ## I. Giới thiệu về cách lưu trữ dữ liệu của Pod trên Kubernetes
 ### 1. Tạo Pod sử dụng `emptyDir` volume
