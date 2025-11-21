@@ -1,4 +1,4 @@
-# Topic 1 - Kubernetes Service  
+# Topic 7 - Kubernetes Service  
 ## I. NodePort Service  
 ### 1. Expose application using NodePort Service  
 ---  
