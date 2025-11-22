@@ -248,3 +248,286 @@ daemonset.apps "fluentd-elasticsearch" deleted
 poddisruptionbudget.policy "nginx-pdb" deleted
 horizontalpodautoscaler.autoscaling "nginx-deployment" deleted
 ```
+----
+# Extra lab
+## VIII. Taints and Tolerations
+### 1. Add a taint to a specific node
+```bash
+kubectl get nodes
+kubectl taint nodes <node-name> key1=value1:NoSchedule
+kubectl describe node <node-name> | grep Taint
+```
+- Sample output
+```bash
+NAME       STATUS   ROLES    AGE   VERSION
+node1      Ready    worker   10d   v1.30.2
+node2      Ready    worker   10d   v1.30.2
+
+Taints: key1=value1:NoSchedule
+```
+
+### 2. Deploy a **Deployment** without toleration
+```bash
+cat <<EOF | kubectl apply -f -
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-no-toleration
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: nginx-no-toleration
+  template:
+    metadata:
+      labels:
+        app: nginx-no-toleration
+    spec:
+      containers:
+      - name: nginx
+        image: nginx
+EOF
+
+kubectl get pods -o wide
+```
+- Sample output
+```bash
+NAME                                   READY   STATUS    RESTARTS   AGE   NODE
+nginx-no-toleration-7cdbd8f8b5-abc12   0/1     Pending   0          15s   <none>
+```
+
+### 3. Deploy a **Deployment** with matching toleration
+```bash
+cat <<EOF | kubectl apply -f -
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-with-toleration
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: nginx-with-toleration
+  template:
+    metadata:
+      labels:
+        app: nginx-with-toleration
+    spec:
+      tolerations:
+      - key: "key1"
+        operator: "Equal"
+        value: "value1"
+        effect: "NoSchedule"
+      containers:
+      - name: nginx
+        image: nginx
+EOF
+
+kubectl get pods -o wide
+```
+- Sample output
+```bash
+NAME                                   READY   STATUS    RESTARTS   AGE   NODE
+nginx-with-toleration-7cdbd8f8b5-abc1  1/1     Running   0          20s   node1
+```
+
+### 4. Remove taint from node
+```bash
+kubectl taint nodes <node-name> key1=value1:NoSchedule-
+kubectl describe node <node-name> | grep Taint
+```
+- Sample output
+```bash
+Taints: <none>
+```
+
+---
+
+## IX. Assigning Workloads to Nodes
+
+### 1. Node Selector (using Deployment)
+```bash
+kubectl label nodes <node-name> disktype=ssd
+kubectl get nodes --show-labels
+cat <<EOF | kubectl apply -f -
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-node-selector
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: nginx-node-selector
+  template:
+    metadata:
+      labels:
+        app: nginx-node-selector
+    spec:
+      nodeSelector:
+        disktype: ssd
+      containers:
+      - name: nginx
+        image: nginx
+EOF
+
+kubectl get pods -o wide
+```
+- Sample output
+```bash
+NAME                                   READY   STATUS    RESTARTS   AGE   NODE
+nginx-node-selector-7cdbd8f8b5-abc12   1/1     Running   0          25s   node1
+```
+
+---
+
+### 2. Node Affinity (using StatefulSet)
+```bash
+cat <<EOF | kubectl apply -f -
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: web-affinity
+spec:
+  serviceName: "web-affinity"
+  replicas: 3
+  selector:
+    matchLabels:
+      app: web-affinity
+  template:
+    metadata:
+      labels:
+        app: web-affinity
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: disktype
+                operator: In
+                values:
+                - ssd
+      containers:
+      - name: nginx
+        image: nginx
+        ports:
+        - containerPort: 80
+EOF
+
+kubectl get pods -o wide
+```
+- Sample output
+```bash
+NAME             READY   STATUS    RESTARTS   AGE   NODE
+web-affinity-0   1/1     Running   0          15s   node1
+web-affinity-1   1/1     Running   0          15s   node1
+web-affinity-2   1/1     Running   0          15s   node1
+```
+
+---
+
+### 3. Pod Affinity (using Deployment)
+```bash
+cat <<EOF | kubectl apply -f -
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-pod-affinity
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: web
+  template:
+    metadata:
+      labels:
+        app: web
+    spec:
+      affinity:
+        podAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: app
+                operator: In
+                values:
+                - web
+            topologyKey: "kubernetes.io/hostname"
+      containers:
+      - name: nginx
+        image: nginx
+EOF
+
+kubectl get pods -o wide
+```
+- Sample output
+```bash
+NAME                                   READY   STATUS    RESTARTS   AGE   NODE
+nginx-pod-affinity-7cdbd8f8b5-abc1     1/1     Running   0          20s   node1
+nginx-pod-affinity-7cdbd8f8b5-def2     1/1     Running   0          20s   node1
+nginx-pod-affinity-7cdbd8f8b5-ghi3     1/1     Running   0          20s   node1
+```
+
+---
+
+### 4. Pod Anti-Affinity (using Deployment)
+```bash
+cat <<EOF | kubectl apply -f -
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-anti-affinity
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: nginx-aa
+  template:
+    metadata:
+      labels:
+        app: nginx-aa
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: app
+                operator: In
+                values:
+                - nginx-aa
+            topologyKey: "kubernetes.io/hostname"
+      containers:
+      - name: nginx
+        image: nginx
+EOF
+
+kubectl get pods -o wide
+```
+- Sample output
+```bash
+NAME                                 READY   STATUS    RESTARTS   AGE   NODE
+nginx-anti-affinity-75f8d6d77c-abc1  1/1     Running   0          20s   node1
+nginx-anti-affinity-75f8d6d77c-def2  1/1     Running   0          20s   node2
+nginx-anti-affinity-75f8d6d77c-ghi3  1/1     Running   0          20s   node3
+```
+
+---
+
+## X. Cleanup
+```bash
+kubectl delete deployment nginx-no-toleration nginx-with-toleration nginx-node-selector nginx-pod-affinity nginx-anti-affinity
+kubectl delete statefulset web-affinity
+kubectl label nodes <node-name> disktype-
+```
+- Sample output
+```bash
+deployment.apps "nginx-no-toleration" deleted
+deployment.apps "nginx-with-toleration" deleted
+deployment.apps "nginx-node-selector" deleted
+deployment.apps "nginx-pod-affinity" deleted
+deployment.apps "nginx-anti-affinity" deleted
+statefulset.apps "web-affinity" deleted
+node/<node-name> unlabeled
+```
