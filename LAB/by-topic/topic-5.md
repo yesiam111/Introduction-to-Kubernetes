@@ -48,7 +48,7 @@ nginx-deployment-6f9c9d8f8d-abcde   1/1     Running   0          10s
 ```bash
 kubectl apply -f https://k8s.io/examples/application/web/web.yaml
 kubectl get statefulsets
-kubectl get pods -l app=web
+kubectl get pods -l app=nginx
 kubectl get pvc
 ```
 - Sample output
